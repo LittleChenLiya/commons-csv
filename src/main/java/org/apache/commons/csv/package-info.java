@@ -79,6 +79,18 @@
  *     System.out.println();
  * }
  * </pre></blockquote>
+ *
+ * <p>Declarative projections select columns by header name (with a 0-based occurrence
+ *    index for duplicated headers and optional output aliases). A projection is compiled
+ *    once from the parsed headers and then applied record by record, preserving each
+ *    record's number and stream positions:</p>
+ * <blockquote><pre>
+ * CSVProjection projection = CSVProjection.builder()
+ *     .column("id")
+ *     .column("name", 1, "secondName")
+ *     .compile(parser);
+ * parser.stream().map(projection::project).forEach(this::consume);
+ * </pre></blockquote>
  */
 
 package org.apache.commons.csv;
