@@ -697,6 +697,15 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     }
 
     /**
+     * Gets the current character position in the input stream.
+     *
+     * @return The current character position.
+     */
+    long getCharacterPosition() {
+        return lexer.getCharacterPosition() + characterOffset;
+    }
+
+    /**
      * Gets the first end-of-line string encountered.
      *
      * @return The first end-of-line string.
