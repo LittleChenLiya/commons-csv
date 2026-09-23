@@ -486,7 +486,7 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
 
     private final CSVFormat format;
 
-    private final Headers headers;
+    private Headers headers;
 
     private final Lexer lexer;
 
@@ -529,6 +529,48 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
         this.byteOffset = builder.byteOffset != -1 ? builder.byteOffset : builder.characterOffset;
         this.characterOffset = builder.characterOffset;
         this.recordNumber = builder.recordNumber - 1;
+    }
+
+    /**
+     * Creates a new instance for push-style parsing by {@link CSVPushSession}.
+     * <p>
+     * Header creation is deferred until {@link #ensureHeaders()} is called, because no input may have been fed yet.
+     * </p>
+     *
+     * @param format the CSVFormat used for CSV parsing.
+     * @param reader the reader over the pushed input.
+     */
+    CSVParser(final CSVFormat format, final ExtendedBufferedReader reader) {
+        this.format = format.copy();
+        this.lexer = new Lexer(this.format, reader);
+        this.csvRecordIterator = new CSVRecordIterator();
+        this.headers = null;
+        this.byteOffset = 0;
+        this.characterOffset = 0;
+        this.recordNumber = 0;
+    }
+
+    /**
+     * Creates the header information if it has not been created yet.
+     *
+     * @throws IOException Thrown if there is a problem reading the header or skipping the first record.
+     */
+    void ensureHeaders() throws IOException {
+        if (headers == null) {
+            headers = createHeaders();
+            // Match the Builder-based constructor, which assigns recordNumber after createHeaders() ran, so that a
+            // header record read from the input does not consume a record number.
+            recordNumber = 0;
+        }
+    }
+
+    /**
+     * Tests whether the header information has been created.
+     *
+     * @return true if the header information has been created.
+     */
+    boolean isHeadersInitialized() {
+        return headers != null;
     }
 
     /**

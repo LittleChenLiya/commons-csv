@@ -30,6 +30,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
+import java.util.Arrays;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.UnsynchronizedBufferedReader;
@@ -86,6 +87,19 @@ final class ExtendedBufferedReader extends UnsynchronizedBufferedReader {
     /** Bytes {@link #encoder} emits as a byte-order mark on every {@link CharsetEncoder#encode(CharBuffer)} call (for example {@code UTF-16}). */
     private final int bomLength;
 
+    /** Characters read ahead by {@link #peek()} and {@link #peek(char[])} but not yet consumed. */
+    private int[] peekBuffer = new int[4];
+
+    /** Index of the next peeked character to consume. */
+    private int peekPosition;
+
+    /** End index of the valid peeked characters. */
+    private int peekEnd;
+
+    private int peekPositionMark;
+
+    private int peekEndMark;
+
     /**
      * Constructs a new instance using the default buffer size.
      */
@@ -105,6 +119,48 @@ final class ExtendedBufferedReader extends UnsynchronizedBufferedReader {
         super(reader);
         encoder = charset != null && trackBytes ? charset.newEncoder() : null;
         bomLength = encoder != null ? measureBomLength(encoder) : 0;
+    }
+
+    /**
+     * Constructs a new instance with the specified buffer size and no byte tracking, for push-style parsing.
+     *
+     * @param reader The reader supports a look-ahead option.
+     * @param bufferSize The buffer size.
+     */
+    ExtendedBufferedReader(final Reader reader, final int bufferSize) {
+        super(reader, bufferSize);
+        encoder = null;
+        bomLength = 0;
+    }
+
+    /**
+     * Snapshots the counters and peek state so that a later {@link #rewind()} restores them. Does not touch the superclass buffer, unlike
+     * {@link #mark(int)}.
+     */
+    void checkpoint() {
+        lineNumberMark = lineNumber;
+        lastCharMark = lastChar;
+        positionMark = position;
+        bytesReadMark = bytesRead;
+        if (peekPosition == peekEnd) {
+            // No peeked characters in flight: recycle the buffer from the start.
+            peekPosition = 0;
+            peekEnd = 0;
+        }
+        peekPositionMark = peekPosition;
+        peekEndMark = peekEnd;
+    }
+
+    /**
+     * Restores the counters and peek state captured by {@link #checkpoint()}. Does not touch the superclass buffer, unlike {@link #reset()}.
+     */
+    void rewind() {
+        lineNumber = lineNumberMark;
+        lastChar = lastCharMark;
+        position = positionMark;
+        bytesRead = bytesReadMark;
+        peekPosition = peekPositionMark;
+        peekEnd = peekEndMark;
     }
 
     /**
@@ -218,11 +274,30 @@ final class ExtendedBufferedReader extends UnsynchronizedBufferedReader {
 
     @Override
     public void mark(final int readAheadLimit) throws IOException {
-        lineNumberMark = lineNumber;
-        lastCharMark = lastChar;
-        positionMark = position;
-        bytesReadMark = bytesRead;
+        checkpoint();
         super.mark(readAheadLimit);
+    }
+
+    /**
+     * Returns the next character in this reader without consuming it. So the next call to {@link #read()} will still return this value.
+     * <p>
+     * Implemented with an internal pushback buffer instead of {@link #mark(int)}/{@link #reset()}, so looking ahead never interferes with a mark set by
+     * callers.
+     * </p>
+     *
+     * @return the next character, or {@link IOUtils#EOF} at the end of the stream.
+     * @throws IOException If an I/O error occurs.
+     */
+    @Override
+    public int peek() throws IOException {
+        if (peekPosition == peekEnd) {
+            final int current = super.read();
+            if (current == EOF) {
+                return EOF;
+            }
+            appendPeek(current);
+        }
+        return peekBuffer[peekPosition];
     }
 
     /**
@@ -243,22 +318,47 @@ final class ExtendedBufferedReader extends UnsynchronizedBufferedReader {
         if (length == 0) {
             return 0;
         }
-        super.mark(length);
-        int len = 0;
-        while (len < length) {
-            final int more = super.read(array, len, length - len);
-            if (more == EOF) {
+        while (peekEnd - peekPosition < length) {
+            final int current = super.read();
+            if (current == EOF) {
                 break;
             }
-            len += more;
+            appendPeek(current);
         }
-        super.reset();
-        return len == 0 ? EOF : len;
+        final int available = peekEnd - peekPosition;
+        if (available == 0) {
+            return EOF;
+        }
+        final int count = Math.min(available, length);
+        for (int i = 0; i < count; i++) {
+            array[i] = (char) peekBuffer[peekPosition + i];
+        }
+        return count;
+    }
+
+    private void appendPeek(final int current) {
+        if (peekEnd == peekBuffer.length) {
+            peekBuffer = Arrays.copyOf(peekBuffer, peekBuffer.length * 2);
+        }
+        peekBuffer[peekEnd++] = current;
+    }
+
+    /**
+     * Reads the next raw character, draining peeked characters first, without updating any counters.
+     *
+     * @return the next character, or {@link IOUtils#EOF} at the end of the stream.
+     * @throws IOException If an I/O error occurs.
+     */
+    private int readNext() throws IOException {
+        if (peekPosition < peekEnd) {
+            return peekBuffer[peekPosition++];
+        }
+        return super.read();
     }
 
     @Override
     public int read() throws IOException {
-        final int current = super.read();
+        final int current = readNext();
         if (current == CR || current == LF && lastChar != CR || current == EOF && lastChar != CR && lastChar != LF && lastChar != EOF) {
             lineNumber++;
         }
@@ -275,15 +375,25 @@ final class ExtendedBufferedReader extends UnsynchronizedBufferedReader {
         if (length == 0) {
             return 0;
         }
-        int len = super.read(buf, offset, length);
+        int len = 0;
+        while (len < length && peekPosition < peekEnd) {
+            buf[offset + len] = (char) peekBuffer[peekPosition++];
+            len++;
+        }
         // The underlying buffered reader stops early once the source reports it is not ready, so a stream that delivers data in chunks (a socket or a pipe)
         // yields a short read. Callers match multi-character sequences against this buffer, so keep reading until it is full or the source is exhausted.
-        while (len > 0 && len < length) {
-            final int more = super.read(buf, offset + len, length - len);
-            if (more == EOF) {
-                break;
+        if (len < length) {
+            int more = super.read(buf, offset + len, length - len);
+            if (more == EOF && len == 0) {
+                len = EOF;
+            } else {
+                while (more > 0 && len < length) {
+                    len += more;
+                    if (len < length) {
+                        more = super.read(buf, offset + len, length - len);
+                    }
+                }
             }
-            len += more;
         }
         if (encoder != null && len > 0) {
             this.bytesRead += getEncodedCharLength(buf, offset, len);
@@ -342,10 +452,7 @@ final class ExtendedBufferedReader extends UnsynchronizedBufferedReader {
 
     @Override
     public void reset() throws IOException {
-        lineNumber = lineNumberMark;
-        lastChar = lastCharMark;
-        position = positionMark;
-        bytesRead = bytesReadMark;
+        rewind();
         super.reset();
     }
 }

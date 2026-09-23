@@ -82,6 +82,7 @@
       <!-- ADD -->
       <action type="add" dev="ggregory" due-to="Gary Gregory, Indy, Sylvia van Os" issue="CSV-307">Add an "Android Compatibility" section to the web site.</action>
       <action type="add" dev="ggregory" due-to="Ruiqi Dong, Gary Gregory" issue="CSV-325">Add CSVParser.Builder.setByteOffset(long) (#604).</action>
+      <action type="add">Add CSVPushSession, a push-style parsing session: feed(CharSequence) returns the records completed by each input chunk and finish() signals end of input, with CSVFormat-compatible record numbers, character positions and line numbers, header support, and an optional per-record character limit.</action>
       <!-- UPDATE --> 
       <action type="update" dev="ggregory" due-to="Gary Gregory, Dependabot">Bump org.apache.commons:commons-parent from 85 to 105 #573, #595.</action>
       <action type="update" dev="ggregory" due-to="Gary Gregory, Dependabot">[test] Bump com.opencsv:opencsv from 5.11.2 to 5.12.0 #558.</action>
