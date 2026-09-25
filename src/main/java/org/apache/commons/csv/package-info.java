@@ -69,6 +69,12 @@
  * <p>In addition to individually defined dialects, two predefined dialects (strict-csv, and excel-csv)
  *    can be set directly.</p> <!-- TODO fix -->
  *
+ * <p>When the dialect of an input is unknown, {@link org.apache.commons.csv.CSVDialectProber}
+ *    probes a bounded character prefix against caller-supplied candidate formats and scores each
+ *    candidate by column-count consistency and the number of valid records, reporting ties as
+ *    ambiguous instead of picking a winner by candidate order. The probed prefix is replayed in
+ *    full by the reader returned from the detection result, without relying on mark/reset.</p>
+ *
  * <p>Example usage:</p>
  * <blockquote><pre>
  * Reader in = new StringReader("a,b,c");
