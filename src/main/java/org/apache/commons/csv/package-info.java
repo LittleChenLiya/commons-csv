@@ -79,6 +79,35 @@
  *     System.out.println();
  * }
  * </pre></blockquote>
+ *
+ * <h2>Record validation</h2>
+ *
+ * <p>The package also provides an optional, independent record validator. Callers declare
+ *    {@link org.apache.commons.csv.ColumnRule}s by column position or unique header name for
+ *    integer, decimal, date and enum columns, optionally nullable, and a
+ *    {@link org.apache.commons.csv.CsvValidator} then returns, per record, either typed values
+ *    ({@link java.lang.Long}, {@link java.math.BigDecimal}, {@link java.time.LocalDate}, enum
+ *    constants) or structured {@link org.apache.commons.csv.ValidationError}s that keep the record
+ *    number and the physical start line. Types are never guessed, decimals never pass through
+ *    {@code double}, and empty strings, missing columns and null tokens are reported distinctly.
+ *    Validation continues after invalid records until a configurable maximum number of errors is
+ *    reached, in which case the {@link org.apache.commons.csv.ValidationResult} is marked
+ *    truncated.</p>
+ *
+ * <p>Example usage:</p>
+ * <blockquote><pre>
+ * CsvValidator validator = CsvValidator.builder()
+ *         .rule(ColumnRule.integer("id"))
+ *         .rule(ColumnRule.decimal("amount"))
+ *         .rule(ColumnRule.date("when"))
+ *         .rule(ColumnRule.decimal("discount").nullable())
+ *         .maxErrors(100)
+ *         .build();
+ * ValidationResult result = validator.validate(parser);
+ * for (ValidatedRecord record : result.getRecords()) {
+ *     // record.isValid(), record.getLong(rule), record.getDecimal(rule), record.getErrors(), ...
+ * }
+ * </pre></blockquote>
  */
 
 package org.apache.commons.csv;
