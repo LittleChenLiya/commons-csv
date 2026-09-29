@@ -64,17 +64,28 @@ public final class CSVRecord implements Serializable, Iterable<String> {
     /** The values of the record. */
     private final String[] values;
 
+    /**
+     * The raw input location of each value, or {@code null} when field position tracking is disabled. Not serialized.
+     */
+    private final transient CSVFieldLocation[] fieldLocations;
+
     /** The parser that originates this record. This is not serialized. */
     private final transient CSVParser parser;
 
     CSVRecord(final CSVParser parser, final String[] values,  final String comment, final long recordNumber,
             final long characterPosition, final long bytePosition) {
+        this(parser, values, comment, recordNumber, characterPosition, bytePosition, null);
+    }
+
+    CSVRecord(final CSVParser parser, final String[] values, final String comment, final long recordNumber,
+            final long characterPosition, final long bytePosition, final CSVFieldLocation[] fieldLocations) {
         this.recordNumber = recordNumber;
         this.values = values != null ? values : Constants.EMPTY_STRING_ARRAY;
         this.parser = parser;
         this.comment = comment;
         this.characterPosition = characterPosition;
         this.bytePosition = bytePosition;
+        this.fieldLocations = fieldLocations != null && fieldLocations.length == 0 ? null : fieldLocations;
     }
 
     /**
@@ -153,6 +164,35 @@ public final class CSVRecord implements Serializable, Iterable<String> {
      */
     public long getBytePosition() {
         return bytePosition;
+    }
+
+    /**
+     * Gets the location of a field in the raw input.
+     * <p>
+     * Field locations are available only when the parser format enables position tracking with
+     * {@link CSVFormat.Builder#setTrackFieldPositions(boolean)}. The raw offsets are zero-based UTF-16 code unit
+     * positions measured from the start of the {@link java.io.Reader}, include surrounding quotes and escape
+     * sequences and span end-of-line characters for fields spread over multiple physical lines.
+     * </p>
+     *
+     * @param i a column index (0-based).
+     * @return The {@link CSVFieldLocation} for the field, or {@code null} if position tracking was not enabled.
+     * @throws ArrayIndexOutOfBoundsException if the index is out of bounds.
+     * @since 1.15.0
+     */
+    public CSVFieldLocation getFieldLocation(final int i) {
+        return fieldLocations == null ? null : fieldLocations[i];
+    }
+
+    /**
+     * Gets the raw input locations of all fields in this record, in column order.
+     *
+     * @return A copy of the field locations, or {@code null} if position tracking was not enabled with
+     *         {@link CSVFormat.Builder#setTrackFieldPositions(boolean)}.
+     * @since 1.15.0
+     */
+    public CSVFieldLocation[] getFieldLocations() {
+        return fieldLocations == null ? null : fieldLocations.clone();
     }
 
     /**

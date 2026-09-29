@@ -495,6 +495,9 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     /** A record buffer for getRecord(). Grows as necessary and is reused. */
     private final List<String> recordList = new ArrayList<>();
 
+    /** Per-field raw input locations for the record being built, used only when position tracking is enabled. */
+    private final List<CSVFieldLocation> recordLocations = new ArrayList<>();
+
     /**
      * The next record number to assign.
      */
@@ -592,13 +595,29 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     }
 
     private void addRecordValue(final boolean lastRecord) {
-        final String input = format.trim(reusableToken.content.toString());
+        final String rawInput = reusableToken.content.toString();
+        final String input = format.trim(rawInput);
         // Only drop the empty field produced by an actual trailing delimiter. A quoted empty
         // field ("") is a real value, not a trailing delimiter, so it must be kept.
         if (lastRecord && input.isEmpty() && format.getTrailingDelimiter() && !reusableToken.isQuoted) {
             return;
         }
+        if (reusableToken.trackLocation) {
+            // getTrim() applies String#trim() after the lexer has built the value; shrink the value mapping to match.
+            final int leading = format.getTrim() && !input.isEmpty() ? countLeadingWhitespace(rawInput) : 0;
+            final int trailing = format.getTrim() && !input.isEmpty() ? rawInput.length() - input.length() - leading : 0;
+            reusableToken.trimLocation(leading, trailing);
+            recordLocations.add(reusableToken.toFieldLocation(characterOffset));
+        }
         recordList.add(handleNull(input));
+    }
+
+    private static int countLeadingWhitespace(final String value) {
+        int index = 0;
+        while (index < value.length() && value.charAt(index) <= ' ') {
+            index++;
+        }
+        return index;
     }
 
     /**
@@ -915,6 +934,7 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     CSVRecord nextRecord() throws IOException {
         CSVRecord result = null;
         recordList.clear();
+        recordLocations.clear();
         StringBuilder sb = null;
         final long startCharPosition = lexer.getCharacterPosition() + characterOffset;
         final long startBytePosition = lexer.getBytesRead() + byteOffset;
@@ -953,7 +973,7 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
         if (!recordList.isEmpty()) {
             recordNumber++;
             result = new CSVRecord(this, recordList.toArray(Constants.EMPTY_STRING_ARRAY), Objects.toString(sb, null), recordNumber, startCharPosition,
-                    startBytePosition);
+                    startBytePosition, recordLocations.toArray(new CSVFieldLocation[0]));
         }
         return result;
     }

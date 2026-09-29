@@ -21,6 +21,10 @@ package org.apache.commons.csv;
 
 import static org.apache.commons.csv.Token.Type.INVALID;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * Internal token representation.
  * <p>
@@ -64,12 +68,109 @@ final class Token {
     /** True when an escape sequence in the input was translated while building {@link #content}. */
     boolean isEscaped;
 
+    /** Whether this token records field positions in the raw input. */
+    boolean trackLocation;
+
+    /** Start position (inclusive) of the verbatim field in the reader, in UTF-16 code units. */
+    long rawStart = -1;
+
+    /** End position (exclusive) of the verbatim field in the reader, in UTF-16 code units. */
+    long rawEnd = -1;
+
+    /** Parallel arrays describing value-to-raw span mappings, grown as needed. */
+    private long[] fragmentRawStart = new long[8];
+
+    private long[] fragmentRawEnd = new long[8];
+
+    private int[] fragmentValueLength = new int[8];
+
+    /** Number of value-to-raw fragments collected for this token. */
+    private int fragmentCount;
+
+    /** Adds a raw span decoding to {@code valueLength} UTF-16 units of the field value. */
+    void addRawFragment(final long start, final long end, final int valueLength) {
+        if (fragmentCount == fragmentRawStart.length) {
+            final int newCapacity = fragmentCount * 2;
+            fragmentRawStart = Arrays.copyOf(fragmentRawStart, newCapacity);
+            fragmentRawEnd = Arrays.copyOf(fragmentRawEnd, newCapacity);
+            fragmentValueLength = Arrays.copyOf(fragmentValueLength, newCapacity);
+        }
+        fragmentRawStart[fragmentCount] = start;
+        fragmentRawEnd[fragmentCount] = end;
+        fragmentValueLength[fragmentCount] = valueLength;
+        fragmentCount++;
+    }
+
+    /** Marks the start of the verbatim field at the given reader position. */
+    void beginLocation(final long start) {
+        trackLocation = true;
+        rawStart = start;
+        rawEnd = start;
+        fragmentCount = 0;
+    }
+
+    /** Builds the immutable public location, adding the given source character offset to all raw positions. */
+    CSVFieldLocation toFieldLocation(final long characterOffset) {
+        final List<CSVValueSpan> spans = new ArrayList<>(fragmentCount);
+        int valueStart = 0;
+        for (int i = 0; i < fragmentCount; i++) {
+            final int valueLength = fragmentValueLength[i];
+            spans.add(new CSVValueSpan(fragmentRawStart[i] + characterOffset, fragmentRawEnd[i] + characterOffset, valueStart,
+                    valueLength));
+            valueStart += valueLength;
+        }
+        return new CSVFieldLocation(rawStart + characterOffset, rawEnd + characterOffset, spans);
+    }
+
+    /**
+     * Adjusts the value-to-raw fragments after {@code leading} / {@code trailing} decoded units were trimmed off the
+     * field value by the format.
+     */
+    void trimLocation(final int leading, final int trailing) {
+        if (leading == 0 && trailing == 0) {
+            return;
+        }
+        int first = 0;
+        int lead = leading;
+        while (first < fragmentCount && lead >= fragmentValueLength[first]) {
+            lead -= fragmentValueLength[first];
+            first++;
+        }
+        int lastExclusive = fragmentCount;
+        int trail = trailing;
+        while (lastExclusive > first && trail >= fragmentValueLength[lastExclusive - 1]) {
+            trail -= fragmentValueLength[lastExclusive - 1];
+            lastExclusive--;
+        }
+        final int newCount = lastExclusive - first;
+        if (first > 0 && newCount > 0) {
+            System.arraycopy(fragmentRawStart, first, fragmentRawStart, 0, newCount);
+            System.arraycopy(fragmentRawEnd, first, fragmentRawEnd, 0, newCount);
+            System.arraycopy(fragmentValueLength, first, fragmentValueLength, 0, newCount);
+        }
+        fragmentCount = newCount;
+        // A fragment can only be partially consumed when it maps decoded units one-to-one onto raw units, so the
+        // leftover decoded count equals the raw count to drop.
+        if (newCount > 0 && lead > 0) {
+            fragmentValueLength[0] -= lead;
+            fragmentRawStart[0] += lead;
+        }
+        if (newCount > 0 && trail > 0) {
+            fragmentValueLength[newCount - 1] -= trail;
+            fragmentRawEnd[newCount - 1] -= trail;
+        }
+    }
+
     void reset() {
         content.setLength(0);
         type = INVALID;
         isReady = false;
         isQuoted = false;
         isEscaped = false;
+        trackLocation = false;
+        rawStart = -1;
+        rawEnd = -1;
+        fragmentCount = 0;
     }
 
     /**

@@ -274,6 +274,9 @@ public final class CSVFormat implements Serializable {
 
         private boolean trim;
 
+        /** Whether the parser records the position of each field in the raw input. */
+        private boolean trackFieldPositions;
+
         /** The maximum number of rows to process, excluding the header row. */
         private long maxRows;
 
@@ -304,6 +307,7 @@ public final class CSVFormat implements Serializable {
             this.trailingData = csvFormat.trailingData;
             this.trailingDelimiter = csvFormat.trailingDelimiter;
             this.trim = csvFormat.trim;
+            this.trackFieldPositions = csvFormat.trackFieldPositions;
         }
 
         /**
@@ -916,6 +920,28 @@ public final class CSVFormat implements Serializable {
          */
         public Builder setTrim(final boolean trim) {
             this.trim = trim;
+            return this;
+        }
+
+        /**
+         * Sets whether the parser records the position of each field in the raw input.
+         * <p>
+         * When enabled, every {@link CSVRecord} provides a {@link CSVFieldLocation} for each of its values through
+         * {@link CSVRecord#getFieldLocation(int)}. Positions are zero-based UTF-16 code unit offsets measured from the
+         * start of the {@link java.io.Reader}, include the original quotes and escape sequences, and span raw
+         * end-of-line characters for fields spread over multiple physical lines.
+         * </p>
+         * <p>
+         * Defaults to {@code false}; set this to {@code true} only when field positions are needed because tracking
+         * them adds some per-field overhead.
+         * </p>
+         *
+         * @param trackFieldPositions {@code true} to record field positions, {@code false} otherwise.
+         * @return This instance.
+         * @since 1.15.0
+         */
+        public Builder setTrackFieldPositions(final boolean trackFieldPositions) {
+            this.trackFieldPositions = trackFieldPositions;
             return this;
         }
     }
@@ -1645,6 +1671,9 @@ public final class CSVFormat implements Serializable {
     /** Whether to trim leading and trailing blanks. */
     private final boolean trim;
 
+    /** Whether the parser records the position of each field in the raw input. */
+    private final boolean trackFieldPositions;
+
     /** The maximum number of rows to process, excluding the header row. */
     private final long maxRows;
 
@@ -1673,6 +1702,7 @@ public final class CSVFormat implements Serializable {
         this.trailingData = builder.trailingData;
         this.trailingDelimiter = builder.trailingDelimiter;
         this.trim = builder.trim;
+        this.trackFieldPositions = builder.trackFieldPositions;
         validate();
     }
 
@@ -1737,7 +1767,7 @@ public final class CSVFormat implements Serializable {
                 Objects.equals(nullString, other.nullString) && Objects.equals(quoteCharacter, other.quoteCharacter) && quoteMode == other.quoteMode &&
                 Objects.equals(quotedNullString, other.quotedNullString) && Objects.equals(recordSeparator, other.recordSeparator) &&
                 skipHeaderRecord == other.skipHeaderRecord && trailingData == other.trailingData && trailingDelimiter == other.trailingDelimiter &&
-                trim == other.trim;
+                trim == other.trim && trackFieldPositions == other.trackFieldPositions;
     }
 
     private void escape(final char c, final Appendable appendable) throws IOException {
@@ -2076,6 +2106,16 @@ public final class CSVFormat implements Serializable {
         return trim;
     }
 
+    /**
+     * Gets whether the parser records the position of each field in the raw input.
+     *
+     * @return {@code true} if the parser records field positions, {@code false} otherwise.
+     * @since 1.15.0
+     */
+    public boolean getTrackFieldPositions() {
+        return trackFieldPositions;
+    }
+
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -2084,7 +2124,7 @@ public final class CSVFormat implements Serializable {
         result = prime * result + Arrays.hashCode(headers);
         result = prime * result + Objects.hash(allowMissingColumnNames, autoFlush, commentMarker, delimiter, duplicateHeaderMode, escapeCharacter,
                 ignoreEmptyLines, ignoreHeaderCase, ignoreSurroundingSpaces, lenientEof, maxRows, nullString, quoteCharacter, quoteMode, quotedNullString,
-                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim);
+                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim, trackFieldPositions);
         return result;
     }
 
