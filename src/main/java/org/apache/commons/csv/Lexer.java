@@ -45,6 +45,7 @@ final class Lexer implements Closeable {
     private final boolean ignoreEmptyLines;
     private final boolean lenientEof;
     private final boolean trailingData;
+    private final boolean trackPositions;
 
     /** The buffered reader. */
     private final ExtendedBufferedReader reader;
@@ -62,8 +63,36 @@ final class Lexer implements Closeable {
         this.ignoreEmptyLines = format.getIgnoreEmptyLines();
         this.lenientEof = format.getLenientEof();
         this.trailingData = format.getTrailingData();
+        this.trackPositions = format.getTrackPositions();
         this.delimiterBuf = new char[delimiter.length - 1];
         this.escapeDelimiterBuf = new char[2 * delimiter.length - 1];
+    }
+
+    /**
+     * Appends a decoded character to the token's content and, when position tracking is enabled, records the source
+     * range it was decoded from.
+     *
+     * @param token The current token.
+     * @param c The decoded character.
+     * @param start Inclusive source offset of the sequence that produced {@code c}.
+     * @param end Exclusive source offset of the sequence that produced {@code c}.
+     */
+    private void appendContent(final Token token, final char c, final long start, final long end) {
+        token.content.append(c);
+        if (trackPositions) {
+            token.addValueRange(start, end);
+            token.rangeEnd = end;
+        }
+    }
+
+    /**
+     * Appends a decoded character to the token's content; the character is the last one read from the reader.
+     *
+     * @param token The current token.
+     * @param c The decoded character.
+     */
+    private void appendContent(final Token token, final char c) {
+        appendContent(token, c, reader.getPosition() - 1, reader.getPosition());
     }
 
     /**
@@ -74,16 +103,27 @@ final class Lexer implements Closeable {
      * @throws CSVException Thrown on invalid input.
      */
     private void appendNextEscapedCharacterToToken(final Token token) throws IOException {
+        // The escape character has just been consumed.
+        final long escapeStart = reader.getPosition() - 1;
         if (isEscapeDelimiter()) {
             token.content.append(delimiter);
+            if (trackPositions) {
+                // The consumed buffer holds delimiter characters interleaved with escape characters; each decoded
+                // delimiter character maps to its escape character plus the delimiter character itself.
+                for (int i = 0; i < delimiter.length; i++) {
+                    token.addValueRange(escapeStart + 2 * i, escapeStart + 2 * i + 2);
+                }
+                token.rangeEnd = reader.getPosition();
+            }
             token.isEscaped = true;
         } else {
             final int unescaped = readEscape();
             if (unescaped == EOF) { // unexpected char after escape
                 // The escape character is kept verbatim, so nothing was translated.
-                token.content.append((char) escape).append((char) reader.getLastChar());
+                appendContent(token, (char) escape, escapeStart, escapeStart + 1);
+                appendContent(token, (char) reader.getLastChar(), escapeStart + 1, escapeStart + 2);
             } else {
-                token.content.append((char) unescaped);
+                appendContent(token, (char) unescaped, escapeStart, escapeStart + 2);
                 token.isEscaped = true;
             }
         }
@@ -258,6 +298,8 @@ final class Lexer implements Closeable {
         int lastChar = reader.getLastChar();
         // read the next char and set eol
         int c = reader.read();
+        // Offset of the character held by c, only meaningful when tracking positions.
+        long charStart = reader.getPosition() - 1;
         // Note: The following call will swallow LF if c == CR. But we don't need to know if the last char was CR or LF - they are equivalent here.
         boolean eol = readEndOfLine(c);
         // empty line detection: eol AND (last char was EOL or beginning)
@@ -266,6 +308,7 @@ final class Lexer implements Closeable {
                 // Go on char ahead ...
                 lastChar = c;
                 c = reader.read();
+                charStart = reader.getPosition() - 1;
                 eol = readEndOfLine(c);
                 // reached the end of the file without any content (empty line at the end)
                 if (isEndOfFile(c)) {
@@ -306,6 +349,7 @@ final class Lexer implements Closeable {
                         break;
                     }
                     c = reader.read();
+                    charStart = reader.getPosition() - 1;
                     eol = readEndOfLine(c);
                 }
             }
@@ -313,21 +357,26 @@ final class Lexer implements Closeable {
             if (delimiter || isDelimiter(c)) {
                 // empty token return TOKEN("")
                 token.type = Token.Type.TOKEN;
+                token.rangeStart = token.rangeEnd = charStart;
             } else if (eol) {
                 // empty token return EORECORD("")
                 // noop: token.content.append("");
                 token.type = Token.Type.EORECORD;
+                token.rangeStart = token.rangeEnd = charStart;
             } else if (isQuoteChar(c)) {
                 // consume encapsulated token
+                token.rangeStart = charStart;
                 parseEncapsulatedToken(token);
             } else if (isEndOfFile(c)) {
                 // end of file return EOF()
                 // noop: token.content.append("");
                 token.type = Token.Type.EOF;
                 token.isReady = true; // there is data at EOF
+                token.rangeStart = token.rangeEnd = charStart;
             } else {
                 // next token must be a simple token
                 // add removed blanks when not ignoring whitespace chars...
+                token.rangeStart = charStart;
                 parseSimpleToken(token, c);
             }
         }
@@ -372,9 +421,13 @@ final class Lexer implements Closeable {
                 if (isQuoteChar(reader.peek())) {
                     // double or escaped encapsulator -> add single encapsulator to token
                     c = reader.read();
-                    token.content.append((char) c);
+                    appendContent(token, (char) c, reader.getPosition() - 2, reader.getPosition());
                 } else {
                     // token finish mark (encapsulator) reached: ignore whitespace till delimiter
+                    if (trackPositions) {
+                        // The raw range of the field ends right after the closing quote.
+                        token.rangeEnd = reader.getPosition();
+                    }
                     while (true) {
                         c = reader.read();
                         if (isDelimiter(c)) {
@@ -391,7 +444,7 @@ final class Lexer implements Closeable {
                             return token;
                         }
                         if (trailingData) {
-                            token.content.append((char) c);
+                            appendContent(token, (char) c);
                         } else if (!Character.isWhitespace((char) c)) {
                             // error invalid char between token and next delimiter
                             throw new CSVException("Invalid character between encapsulated token and delimiter at line: %,d, position: %,d",
@@ -411,7 +464,7 @@ final class Lexer implements Closeable {
                 throw new CSVException("(startline %,d) EOF reached before encapsulated token finished", startLineNumber);
             } else {
                 // consume character
-                token.content.append((char) c);
+                appendContent(token, (char) c);
             }
         }
     }
@@ -455,13 +508,14 @@ final class Lexer implements Closeable {
             if (isEscape(cur)) {
                 appendNextEscapedCharacterToToken(token);
             } else {
-                token.content.append((char) cur);
+                appendContent(token, (char) cur);
             }
             cur = reader.read(); // continue
         }
 
         if (ignoreSurroundingSpaces) {
             trimTrailingSpaces(token.content);
+            token.truncateValueRanges(token.content.length());
         }
 
         return token;

@@ -61,6 +61,9 @@ public final class CSVRecord implements Serializable, Iterable<String> {
     /** The record number. */
     private final long recordNumber;
 
+    /** The source ranges of the record's fields, or null when positions were not tracked. */
+    private final CSVFieldRange[] fieldRanges;
+
     /** The values of the record. */
     private final String[] values;
 
@@ -69,12 +72,18 @@ public final class CSVRecord implements Serializable, Iterable<String> {
 
     CSVRecord(final CSVParser parser, final String[] values,  final String comment, final long recordNumber,
             final long characterPosition, final long bytePosition) {
+        this(parser, values, comment, recordNumber, characterPosition, bytePosition, null);
+    }
+
+    CSVRecord(final CSVParser parser, final String[] values,  final String comment, final long recordNumber,
+            final long characterPosition, final long bytePosition, final CSVFieldRange[] fieldRanges) {
         this.recordNumber = recordNumber;
         this.values = values != null ? values : Constants.EMPTY_STRING_ARRAY;
         this.parser = parser;
         this.comment = comment;
         this.characterPosition = characterPosition;
         this.bytePosition = bytePosition;
+        this.fieldRanges = fieldRanges;
     }
 
     /**
@@ -177,6 +186,35 @@ public final class CSVRecord implements Serializable, Iterable<String> {
         return comment;
     }
 
+    /**
+     * Gets the source range of the field at the given index, locating the raw field text and each decoded value
+     * character in the original input.
+     *
+     * @param i a column index (0-based).
+     * @return The source range of the field at the given index.
+     * @throws IllegalStateException if the parser was not configured to track positions, see
+     *         {@link CSVFormat.Builder#setTrackPositions(boolean)}.
+     * @throws ArrayIndexOutOfBoundsException if the index is out of bounds.
+     * @since 1.15.0
+     */
+    public CSVFieldRange getFieldRange(final int i) {
+        if (fieldRanges == null) {
+            throw new IllegalStateException("Position tracking is not enabled, see CSVFormat.Builder#setTrackPositions(boolean)");
+        }
+        return fieldRanges[i];
+    }
+
+    /**
+     * Gets the source ranges of this record's fields, parallel to {@link #values()}. This is <strong>not</strong> a
+     * copy.
+     *
+     * @return The source ranges of this record's fields, or null when positions were not tracked.
+     * @since 1.15.0
+     */
+    public CSVFieldRange[] getFieldRanges() {
+        return fieldRanges;
+    }
+
     private Map<String, Integer> getHeaderMapRaw() {
         return parser == null ? null : parser.getHeaderMapRaw();
     }
@@ -222,6 +260,18 @@ public final class CSVRecord implements Serializable, Iterable<String> {
      */
     public boolean hasComment() {
         return comment != null;
+    }
+
+    /**
+     * Tests whether this record carries source ranges for its fields. Ranges are only available when the parser was
+     * configured to track positions, see {@link CSVFormat.Builder#setTrackPositions(boolean)}.
+     *
+     * @return true if field source ranges are available.
+     * @since 1.15.0
+     * @see #getFieldRange(int)
+     */
+    public boolean hasFieldRanges() {
+        return fieldRanges != null;
     }
 
     /**

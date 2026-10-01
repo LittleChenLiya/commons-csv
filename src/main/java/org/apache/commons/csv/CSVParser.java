@@ -495,6 +495,9 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     /** A record buffer for getRecord(). Grows as necessary and is reused. */
     private final List<String> recordList = new ArrayList<>();
 
+    /** A field range buffer parallel to {@link #recordList}, only populated when positions are tracked. */
+    private final List<CSVFieldRange> rangeList = new ArrayList<>();
+
     /**
      * The next record number to assign.
      */
@@ -592,13 +595,46 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     }
 
     private void addRecordValue(final boolean lastRecord) {
-        final String input = format.trim(reusableToken.content.toString());
+        final String content = reusableToken.content.toString();
+        final String input = format.trim(content);
         // Only drop the empty field produced by an actual trailing delimiter. A quoted empty
         // field ("") is a real value, not a trailing delimiter, so it must be kept.
         if (lastRecord && input.isEmpty() && format.getTrailingDelimiter() && !reusableToken.isQuoted) {
             return;
         }
         recordList.add(handleNull(input));
+        if (format.getTrackPositions()) {
+            rangeList.add(createFieldRange(content, input));
+        }
+    }
+
+    /**
+     * Creates the {@link CSVFieldRange} for the current token, aligning the value mapping with the value stored in
+     * the record (which may have been trimmed).
+     *
+     * @param content The raw decoded token content, before trimming.
+     * @param input The value stored in the record, after trimming.
+     * @return The field range for the current token.
+     */
+    private CSVFieldRange createFieldRange(final String content, final String input) {
+        int from = 0;
+        int to = content.length();
+        if (input.length() != to) {
+            // The value was trimmed: locate it inside the raw token content, like String.trim() does.
+            while (from < to && content.charAt(from) <= ' ') {
+                from++;
+            }
+            while (to > from && content.charAt(to - 1) <= ' ') {
+                to--;
+            }
+        }
+        final int length = Math.min(input.length(), Math.max(0, reusableToken.valueRangeCount - from));
+        final long[] valueRanges = new long[2 * length];
+        for (int i = 0; i < length; i++) {
+            valueRanges[2 * i] = reusableToken.valueRanges[2 * (from + i)] + characterOffset;
+            valueRanges[2 * i + 1] = reusableToken.valueRanges[2 * (from + i) + 1] + characterOffset;
+        }
+        return new CSVFieldRange(reusableToken.rangeStart + characterOffset, reusableToken.rangeEnd + characterOffset, valueRanges);
     }
 
     /**
@@ -915,6 +951,7 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     CSVRecord nextRecord() throws IOException {
         CSVRecord result = null;
         recordList.clear();
+        rangeList.clear();
         StringBuilder sb = null;
         final long startCharPosition = lexer.getCharacterPosition() + characterOffset;
         final long startBytePosition = lexer.getBytesRead() + byteOffset;
@@ -952,8 +989,9 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
         } while (reusableToken.type == TOKEN);
         if (!recordList.isEmpty()) {
             recordNumber++;
-            result = new CSVRecord(this, recordList.toArray(Constants.EMPTY_STRING_ARRAY), Objects.toString(sb, null), recordNumber, startCharPosition,
-                    startBytePosition);
+            result = new CSVRecord(this, recordList.toArray(Constants.EMPTY_STRING_ARRAY), Objects.toString(sb, null), recordNumber,
+                    startCharPosition, startBytePosition,
+                    format.getTrackPositions() ? rangeList.toArray(new CSVFieldRange[0]) : null);
         }
         return result;
     }

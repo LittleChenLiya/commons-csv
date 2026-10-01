@@ -274,6 +274,8 @@ public final class CSVFormat implements Serializable {
 
         private boolean trim;
 
+        private boolean trackPositions;
+
         /** The maximum number of rows to process, excluding the header row. */
         private long maxRows;
 
@@ -304,6 +306,7 @@ public final class CSVFormat implements Serializable {
             this.trailingData = csvFormat.trailingData;
             this.trailingDelimiter = csvFormat.trailingDelimiter;
             this.trim = csvFormat.trim;
+            this.trackPositions = csvFormat.trackPositions;
         }
 
         /**
@@ -916,6 +919,23 @@ public final class CSVFormat implements Serializable {
          */
         public Builder setTrim(final boolean trim) {
             this.trim = trim;
+            return this;
+        }
+
+        /**
+         * Sets whether to track the source position of each field while parsing.
+         * <p>
+         * When enabled, every {@link CSVRecord} exposes a {@link CSVFieldRange} per value through
+         * {@link CSVRecord#getFieldRange(int)}, locating the raw field text (including quotes and escape sequences)
+         * and each decoded value character in the original input. Tracking is disabled by default.
+         * </p>
+         *
+         * @param trackPositions whether to track field positions.
+         * @return This instance.
+         * @since 1.15.0
+         */
+        public Builder setTrackPositions(final boolean trackPositions) {
+            this.trackPositions = trackPositions;
             return this;
         }
     }
@@ -1645,6 +1665,9 @@ public final class CSVFormat implements Serializable {
     /** Whether to trim leading and trailing blanks. */
     private final boolean trim;
 
+    /** Whether to track the source position of each parsed field. */
+    private final boolean trackPositions;
+
     /** The maximum number of rows to process, excluding the header row. */
     private final long maxRows;
 
@@ -1673,6 +1696,7 @@ public final class CSVFormat implements Serializable {
         this.trailingData = builder.trailingData;
         this.trailingDelimiter = builder.trailingDelimiter;
         this.trim = builder.trim;
+        this.trackPositions = builder.trackPositions;
         validate();
     }
 
@@ -1737,7 +1761,7 @@ public final class CSVFormat implements Serializable {
                 Objects.equals(nullString, other.nullString) && Objects.equals(quoteCharacter, other.quoteCharacter) && quoteMode == other.quoteMode &&
                 Objects.equals(quotedNullString, other.quotedNullString) && Objects.equals(recordSeparator, other.recordSeparator) &&
                 skipHeaderRecord == other.skipHeaderRecord && trailingData == other.trailingData && trailingDelimiter == other.trailingDelimiter &&
-                trim == other.trim;
+                trackPositions == other.trackPositions && trim == other.trim;
     }
 
     private void escape(final char c, final Appendable appendable) throws IOException {
@@ -2076,6 +2100,16 @@ public final class CSVFormat implements Serializable {
         return trim;
     }
 
+    /**
+     * Gets whether to track the source position of each field while parsing.
+     *
+     * @return whether field positions are tracked and exposed through {@link CSVRecord#getFieldRange(int)}.
+     * @since 1.15.0
+     */
+    public boolean getTrackPositions() {
+        return trackPositions;
+    }
+
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -2084,7 +2118,7 @@ public final class CSVFormat implements Serializable {
         result = prime * result + Arrays.hashCode(headers);
         result = prime * result + Objects.hash(allowMissingColumnNames, autoFlush, commentMarker, delimiter, duplicateHeaderMode, escapeCharacter,
                 ignoreEmptyLines, ignoreHeaderCase, ignoreSurroundingSpaces, lenientEof, maxRows, nullString, quoteCharacter, quoteMode, quotedNullString,
-                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim);
+                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trackPositions, trim);
         return result;
     }
 

@@ -64,12 +64,61 @@ final class Token {
     /** True when an escape sequence in the input was translated while building {@link #content}. */
     boolean isEscaped;
 
+    /**
+     * Offset of the first source character of this token, or -1 when positions are not tracked. Includes the opening
+     * quote of an encapsulated token.
+     */
+    long rangeStart = -1;
+
+    /** Offset one past the last source character of this token, or -1 when positions are not tracked. */
+    long rangeEnd = -1;
+
+    /**
+     * Flattened half-open source ranges, two entries (start, end) per character of {@link #content}. Only the first
+     * {@code 2 * valueRangeCount} entries are valid. Grows as necessary and is reused.
+     */
+    long[] valueRanges = new long[2 * DEFAULT_CAPACITY];
+
+    /** The number of content characters for which {@link #valueRanges} holds a source range. */
+    int valueRangeCount;
+
+    /**
+     * Appends a source range for one content character.
+     *
+     * @param start inclusive source offset.
+     * @param end exclusive source offset.
+     */
+    void addValueRange(final long start, final long end) {
+        if (valueRanges.length < 2 * (valueRangeCount + 1)) {
+            final long[] grown = new long[2 * Math.max(valueRanges.length, 2 * (valueRangeCount + 1))];
+            System.arraycopy(valueRanges, 0, grown, 0, valueRanges.length);
+            valueRanges = grown;
+        }
+        valueRanges[2 * valueRangeCount] = start;
+        valueRanges[2 * valueRangeCount + 1] = end;
+        valueRangeCount++;
+    }
+
     void reset() {
         content.setLength(0);
         type = INVALID;
         isReady = false;
         isQuoted = false;
         isEscaped = false;
+        rangeStart = -1;
+        rangeEnd = -1;
+        valueRangeCount = 0;
+    }
+
+    /**
+     * Truncates the tracked value ranges to {@code length} characters, mirroring a truncation of {@link #content}.
+     *
+     * @param length the new content length.
+     */
+    void truncateValueRanges(final int length) {
+        if (valueRangeCount > length) {
+            valueRangeCount = length;
+        }
     }
 
     /**

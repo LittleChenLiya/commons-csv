@@ -46,6 +46,8 @@ final class Constants {
 
     static final String[] EMPTY_STRING_ARRAY = {};
 
+    static final long[] EMPTY_LONG_ARRAY = {};
+
     static final char FF = '\f';
 
     static final char LF = '\n';
