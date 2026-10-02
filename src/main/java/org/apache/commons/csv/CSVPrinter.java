@@ -79,6 +79,9 @@ import org.apache.commons.io.function.IOStream;
  */
 public final class CSVPrinter implements Flushable, Closeable {
 
+    /** Identity converter used by the prepared-record overloads that take no converter. */
+    private static final CSVConverter<Object> IDENTITY_CONVERTER = value -> value;
+
     /** The place that the values get written. */
     private final Appendable appendable;
 
@@ -389,6 +392,112 @@ public final class CSVPrinter implements Flushable, Closeable {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Prints the given values as a single prepared record of delimiter-separated values followed by the record
+     * separator, converting each value with the given converter first.
+     *
+     * <p>
+     * Unlike {@link #printRecord(Iterable)}, which streams each column to the output as it goes, this method first
+     * converts and escapes <em>every</em> column into a private buffer following this printer's {@link CSVFormat}.
+     * Only when all columns have been prepared successfully is the complete record handed to the target
+     * {@link Appendable} in a single write. A failing column therefore never leaves a half-written record behind.
+     * </p>
+     *
+     * <p>
+     * The converter is invoked at most once per column; it is never called twice to pre-measure output length.
+     * </p>
+     *
+     * <p>
+     * The two failure modes are deliberately distinct:
+     * </p>
+     *
+     * <ul>
+     * <li>Conversion failure: if the converter throws, a {@link CSVConversionException} is thrown and nothing of
+     * this record was written to the output.</li>
+     * <li>Output failure: if the target {@link Appendable} throws an {@link IOException} while the prepared record
+     * is being written, already-written bytes are <em>not</em> rolled back, but the record count is not incremented
+     * either.</li>
+     * </ul>
+     *
+     * <p>
+     * The record count is incremented only after the prepared record has been written successfully. This method
+     * never closes or flushes the target {@link Appendable}; it remains owned by the caller.
+     * </p>
+     *
+     * @param <T>       the type of business objects to print.
+     * @param values    values to output.
+     * @param converter converts each business object into the value printed for its column; invoked at most once per
+     *                  column.
+     * @throws IOException            If an I/O error occurs while writing the fully prepared record to the output.
+     * @throws CSVConversionException If the converter fails on any column; nothing of this record is written.
+     * @since 1.15.0
+     */
+    public <T> void printPreparedRecord(final Iterable<? extends T> values, final CSVConverter<? super T> converter) throws IOException {
+        Objects.requireNonNull(values, "values");
+        Objects.requireNonNull(converter, "converter");
+        lock.lock();
+        try {
+            // Phase 1: convert and escape every column into a private buffer. Nothing reaches the
+            // target Appendable here, so a conversion failure leaves the output untouched.
+            final StringBuilder prepared = new StringBuilder();
+            boolean firstColumn = newRecord;
+            int columnIndex = 0;
+            for (final T value : values) {
+                final Object converted;
+                try {
+                    converted = converter.convert(value);
+                } catch (final Exception e) {
+                    throw new CSVConversionException(columnIndex, e);
+                }
+                format.print(converted, prepared, firstColumn);
+                firstColumn = false;
+                columnIndex++;
+            }
+            format.println(prepared);
+            // Phase 2: the record is fully prepared; write it in one call. An IOException here comes
+            // from the target output: written bytes are not rolled back, and the record is not counted.
+            appendable.append(prepared);
+            newRecord = true;
+            recordCount++;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Prints the given values as a single prepared record of delimiter-separated values followed by the record
+     * separator.
+     *
+     * <p>
+     * Behaves like {@link #printPreparedRecord(Iterable, CSVConverter)} with an identity converter: every value is
+     * rendered with {@link String#valueOf(Object)} semantics exactly as {@link #printRecord(Iterable)} would render
+     * it, but the whole record is converted and escaped before anything is written to the output.
+     * </p>
+     *
+     * @param values values to output.
+     * @throws IOException If an I/O error occurs while writing the fully prepared record to the output.
+     * @since 1.15.0
+     */
+    public void printPreparedRecord(final Iterable<?> values) throws IOException {
+        printPreparedRecord(values, IDENTITY_CONVERTER);
+    }
+
+    /**
+     * Prints the given values as a single prepared record of delimiter-separated values followed by the record
+     * separator.
+     *
+     * <p>
+     * See {@link #printPreparedRecord(Iterable)}.
+     * </p>
+     *
+     * @param values values to output.
+     * @throws IOException If an I/O error occurs while writing the fully prepared record to the output.
+     * @since 1.15.0
+     */
+    public void printPreparedRecord(final Object... values) throws IOException {
+        printPreparedRecord(Arrays.asList(values));
     }
 
     private void printRecordObject(final Object value) throws IOException {
