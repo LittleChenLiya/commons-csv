@@ -36,6 +36,7 @@ import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.function.IOStream;
@@ -76,8 +77,49 @@ import org.apache.commons.io.function.IOStream;
  *
  * 2,mary,Mary,Meyer,1985-03-29
  * </pre>
+ *
+ * <p>Business objects can be converted to CSV in two steps with a {@link PreparedRecord}:
+ * {@link #prepareRecord(Iterable, Function)} converts and escapes every value first, without writing to the
+ * output, and {@link #printRecord(PreparedRecord)} then hands the whole record to the output in a single
+ * append call. If a converter fails while preparing, nothing is written and the record count is unchanged.
+ * </p>
  */
 public final class CSVPrinter implements Flushable, Closeable {
+
+    /**
+     * A fully prepared record: every value has been converted by the caller-supplied converter and escaped
+     * according to the printer's {@link CSVFormat}, so the record can be written to the output with a single
+     * append call.
+     *
+     * <p>A prepared record is created by {@link CSVPrinter#prepareRecord(Iterable, Function)} and contains the
+     * complete record text, including the record separator. Preparing a record does not write to the printer's
+     * output, so a converter failure leaves the output untouched; see {@link CSVPrinter#prepareRecord(Iterable, Function)}
+     * for details.</p>
+     *
+     * <p>The same prepared record can be printed any number of times; each print appends the same text and
+     * increments the printer's record count. Printing a prepared record does not close the output; the writer
+     * remains under the caller's control.</p>
+     *
+     * @since 1.15.0
+     */
+    public static final class PreparedRecord {
+
+        /** The fully formatted record text, including the record separator. */
+        private final String text;
+
+        PreparedRecord(final String text) {
+            this.text = Objects.requireNonNull(text, "text");
+        }
+
+        /**
+         * Gets the fully formatted record text, including the record separator, that this record will print.
+         *
+         * @return the formatted record text.
+         */
+        public String getText() {
+            return text;
+        }
+    }
 
     /** The place that the values get written. */
     private final Appendable appendable;
@@ -389,6 +431,86 @@ public final class CSVPrinter implements Flushable, Closeable {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Prints a prepared record to the output in a single append call.
+     *
+     * <p>The record text was fully converted and escaped when it was prepared, so printing never calls the
+     * converter again. The record count is only incremented after the append completed successfully; an I/O
+     * failure may leave bytes in the output (they cannot be rolled back) but does not increment the count.</p>
+     *
+     * <p>Printing a prepared record does not close the output; the writer remains under the caller's control.</p>
+     *
+     * @param record the prepared record to print.
+     * @throws IOException if an I/O error occurs.
+     * @see #prepareRecord(Iterable, Function)
+     * @since 1.15.0
+     */
+    public void printRecord(final PreparedRecord record) throws IOException {
+        lock.lock();
+        try {
+            Objects.requireNonNull(record, "record");
+            appendable.append(record.getText());
+            newRecord = true;
+            recordCount++;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Prepares a record for printing without writing anything to the printer's output.
+     *
+     * <p>Each value is converted by {@code converter} and then escaped according to the printer's
+     * {@link CSVFormat} into an in-memory buffer. The converter is called exactly once per value, in iteration
+     * order, and is never called again when the prepared record is printed. Only after every value has been
+     * converted and escaped successfully is the record handed to the output in a single append call by
+     * {@link #printRecord(PreparedRecord)}.</p>
+     *
+     * <p>Because preparation never touches the output, a converter failure (a {@link RuntimeException} thrown
+     * by the converter) leaves the output and the {@linkplain #getRecordCount() record count} untouched. This
+     * is different from an I/O failure while printing: once bytes have been handed to the output they cannot be
+     * rolled back, but the record count is still not incremented.</p>
+     *
+     * @param values    the values to convert and print.
+     * @param converter the converter turning each value into its CSV text; called at most once per value.
+     * @param <T>       the value type.
+     * @return a prepared record ready to be printed.
+     * @throws IOException if an I/O error occurs while preparing the record (preparation writes to an in-memory
+     *                     buffer, so this is only thrown by the format).
+     * @see #printRecord(PreparedRecord)
+     * @since 1.15.0
+     */
+    public <T> PreparedRecord prepareRecord(final Iterable<T> values, final Function<? super T, ? extends String> converter) throws IOException {
+        Objects.requireNonNull(values, "values");
+        Objects.requireNonNull(converter, "converter");
+        final StringBuilder builder = new StringBuilder();
+        boolean first = true;
+        for (final T value : values) {
+            final String text = converter.apply(value);
+            format.print(text, builder, first);
+            first = false;
+        }
+        format.println(builder);
+        return new PreparedRecord(builder.toString());
+    }
+
+    /**
+     * Prepares a record for printing without writing anything to the printer's output.
+     *
+     * <p>See {@link #prepareRecord(Iterable, Function)} for details.</p>
+     *
+     * @param converter the converter turning each value into its CSV text; called at most once per value.
+     * @param values    the values to convert and print.
+     * @return a prepared record ready to be printed.
+     * @throws IOException if an I/O error occurs while preparing the record.
+     * @see #prepareRecord(Iterable, Function)
+     * @see #printRecord(PreparedRecord)
+     * @since 1.15.0
+     */
+    public PreparedRecord prepareRecord(final Function<? super Object, ? extends String> converter, final Object... values) throws IOException {
+        return prepareRecord(Arrays.asList(values), converter);
     }
 
     private void printRecordObject(final Object value) throws IOException {
