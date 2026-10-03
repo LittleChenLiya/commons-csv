@@ -1,0 +1,9 @@
+# Schema sections demo: each __schema__ record starts a new section
+__schema__,name,age
+Alice,30
+Bob,41
+__schema__,age,name,note
+27,Carol,"loves, commas"
+__schema__,id,label
+100,alpha
+# end of file comment
