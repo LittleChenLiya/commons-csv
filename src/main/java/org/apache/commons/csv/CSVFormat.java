@@ -274,6 +274,8 @@ public final class CSVFormat implements Serializable {
 
         private boolean trim;
 
+        private FormulaProtection formulaProtection = FormulaProtection.OFF;
+
         /** The maximum number of rows to process, excluding the header row. */
         private long maxRows;
 
@@ -288,6 +290,7 @@ public final class CSVFormat implements Serializable {
             this.delimiter = csvFormat.delimiter;
             this.duplicateHeaderMode = csvFormat.duplicateHeaderMode;
             this.escapeCharacter = csvFormat.escapeCharacter;
+            this.formulaProtection = csvFormat.formulaProtection;
             this.headerComments = csvFormat.headerComments;
             this.headers = csvFormat.headers;
             this.ignoreEmptyLines = csvFormat.ignoreEmptyLines;
@@ -916,6 +919,22 @@ public final class CSVFormat implements Serializable {
          */
         public Builder setTrim(final boolean trim) {
             this.trim = trim;
+            return this;
+        }
+
+        /**
+         * Sets the formula protection policy applied when printing CSV fields. The default is {@link FormulaProtection#OFF}, which preserves the behavior of
+         * previous releases. Set to {@link FormulaProtection#ON} to guard text fields against formula injection and to validate fields declared as numbers.
+         *
+         * @param formulaProtection the formula protection policy, must not be {@code null}
+         * @return This instance.
+         * @throws NullPointerException if {@code formulaProtection} is {@code null}
+         * @see FormulaProtection
+         * @see FormulaGuard
+         * @since 1.15.0
+         */
+        public Builder setFormulaProtection(final FormulaProtection formulaProtection) {
+            this.formulaProtection = Objects.requireNonNull(formulaProtection, "formulaProtection");
             return this;
         }
     }
@@ -1645,6 +1664,9 @@ public final class CSVFormat implements Serializable {
     /** Whether to trim leading and trailing blanks. */
     private final boolean trim;
 
+    /** The formula protection policy applied when printing. */
+    private final FormulaProtection formulaProtection;
+
     /** The maximum number of rows to process, excluding the header row. */
     private final long maxRows;
 
@@ -1673,6 +1695,7 @@ public final class CSVFormat implements Serializable {
         this.trailingData = builder.trailingData;
         this.trailingDelimiter = builder.trailingDelimiter;
         this.trim = builder.trim;
+        this.formulaProtection = builder.formulaProtection;
         validate();
     }
 
@@ -1737,7 +1760,7 @@ public final class CSVFormat implements Serializable {
                 Objects.equals(nullString, other.nullString) && Objects.equals(quoteCharacter, other.quoteCharacter) && quoteMode == other.quoteMode &&
                 Objects.equals(quotedNullString, other.quotedNullString) && Objects.equals(recordSeparator, other.recordSeparator) &&
                 skipHeaderRecord == other.skipHeaderRecord && trailingData == other.trailingData && trailingDelimiter == other.trailingDelimiter &&
-                trim == other.trim;
+                trim == other.trim && formulaProtection == other.formulaProtection;
     }
 
     private void escape(final char c, final Appendable appendable) throws IOException {
@@ -2076,6 +2099,30 @@ public final class CSVFormat implements Serializable {
         return trim;
     }
 
+    /**
+     * Gets the formula protection policy applied when printing CSV fields.
+     *
+     * @return the formula protection policy
+     * @see FormulaProtection
+     * @see FormulaGuard
+     * @since 1.15.0
+     */
+    public FormulaProtection getFormulaProtection() {
+        return formulaProtection;
+    }
+
+    /**
+     * Gets whether formula protection is enabled when printing CSV fields.
+     *
+     * @return {@code true} if formula protection is enabled, {@code false} otherwise
+     * @see FormulaProtection
+     * @see FormulaGuard
+     * @since 1.15.0
+     */
+    public boolean isFormulaProtectionEnabled() {
+        return formulaProtection == FormulaProtection.ON;
+    }
+
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -2084,7 +2131,7 @@ public final class CSVFormat implements Serializable {
         result = prime * result + Arrays.hashCode(headers);
         result = prime * result + Objects.hash(allowMissingColumnNames, autoFlush, commentMarker, delimiter, duplicateHeaderMode, escapeCharacter,
                 ignoreEmptyLines, ignoreHeaderCase, ignoreSurroundingSpaces, lenientEof, maxRows, nullString, quoteCharacter, quoteMode, quotedNullString,
-                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim);
+                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim, formulaProtection);
         return result;
     }
 
@@ -2936,6 +2983,20 @@ public final class CSVFormat implements Serializable {
     @Deprecated
     public CSVFormat withEscape(final Character escape) {
         return builder().setEscape(escape).get();
+    }
+
+    /**
+     * Builds a new {@code CSVFormat} with the formula protection policy set to the given value.
+     *
+     * @param formulaProtection the formula protection policy, must not be {@code null}
+     * @return A new CSVFormat that is equal to this but with the specified formula protection policy.
+     * @throws NullPointerException if {@code formulaProtection} is {@code null}
+     * @see FormulaProtection
+     * @see FormulaGuard
+     * @since 1.15.0
+     */
+    public CSVFormat withFormulaProtection(final FormulaProtection formulaProtection) {
+        return builder().setFormulaProtection(formulaProtection).get();
     }
 
     // @formatter:off

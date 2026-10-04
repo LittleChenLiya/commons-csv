@@ -321,8 +321,21 @@ public final class CSVPrinter implements Flushable, Closeable {
      *             If an I/O error occurs
      */
     private void printRaw(final Object value) throws IOException {
-        format.print(value, appendable, newRecord);
+        format.print(protect(value), appendable, newRecord);
         newRecord = false;
+    }
+
+    /**
+     * Applies the formula protection policy of the current format to the given value. When formula protection is disabled, the value is returned unchanged so
+     * that the printing behavior of previous releases is preserved.
+     *
+     * @param value the value to protect
+     * @return the protected value, or the original value when protection is disabled
+     * @see FormulaGuard
+     * @see FormulaProtection
+     */
+    private Object protect(final Object value) {
+        return format.isFormulaProtectionEnabled() ? FormulaGuard.INSTANCE.apply(value) : value;
     }
 
     /**

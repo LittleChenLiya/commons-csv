@@ -66,6 +66,16 @@
  *       Otherwise, empty lines will return a record with a single empty value.</dd>
  * </dl>
  *
+ * <p>When a CSV file is handed to spreadsheet software, text that starts with one of the formula introducers
+ * {@code =}, {@code +}, {@code -}, or {@code @} may be evaluated as a formula (CSV injection). The
+ * {@link org.apache.commons.csv.FormulaProtection} policy is opt-in: when set to
+ * {@link org.apache.commons.csv.FormulaProtection#ON} on a {@link org.apache.commons.csv.CSVFormat}, the
+ * {@link org.apache.commons.csv.CSVPrinter} runs every field through {@link org.apache.commons.csv.FormulaGuard}
+ * before applying the usual CSV quoting and escaping. Text fields starting with a formula introducer (after
+ * ignoring leading whitespace) are prefixed with a single quote, and fields declared as numbers through
+ * {@link org.apache.commons.csv.FormulaGuard#numeric(CharSequence)} are validated against a strict number
+ * syntax. The default {@link org.apache.commons.csv.FormulaProtection#OFF} leaves every printed byte unchanged.</p>
+ *
  * <p>In addition to individually defined dialects, two predefined dialects (strict-csv, and excel-csv)
  *    can be set directly.</p> <!-- TODO fix -->
  *
