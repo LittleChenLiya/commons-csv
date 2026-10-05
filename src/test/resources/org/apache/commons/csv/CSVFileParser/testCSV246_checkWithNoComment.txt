@@ -1,5 +1,5 @@
 testCSV246.csv CommentStart=# CheckComments
-Delimiter=<,> QuoteChar=<"> CommentStart=<#> SkipHeaderRecord:false
+Delimiter=<,> QuoteChar=<"> CommentStart=<#> RecordTerminator=<ANY> SkipHeaderRecord:false
 5:[a, b, c, e, f]
 # Very Long
 # Comment 2

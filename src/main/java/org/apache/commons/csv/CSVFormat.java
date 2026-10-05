@@ -264,6 +264,8 @@ public final class CSVFormat implements Serializable {
 
         private String recordSeparator;
 
+        private RecordTerminator recordTerminator = RecordTerminator.ANY;
+
         private boolean skipHeaderRecord;
 
         private boolean lenientEof;
@@ -300,6 +302,7 @@ public final class CSVFormat implements Serializable {
             this.quoteMode = csvFormat.quoteMode;
             this.quotedNullString = csvFormat.quotedNullString;
             this.recordSeparator = csvFormat.recordSeparator;
+            this.recordTerminator = csvFormat.recordTerminator;
             this.skipHeaderRecord = csvFormat.skipHeaderRecord;
             this.trailingData = csvFormat.trailingData;
             this.trailingDelimiter = csvFormat.trailingDelimiter;
@@ -860,6 +863,30 @@ public final class CSVFormat implements Serializable {
          */
         public Builder setRecordSeparator(final String recordSeparator) {
             this.recordSeparator = recordSeparator;
+            return this;
+        }
+
+        /**
+         * Sets the strategy used to recognize record terminators when parsing.
+         *
+         * <p>
+         * The default is {@link RecordTerminator#ANY}, which accepts LF, CR, and CRLF interchangeably, preserving the original behavior. Set this to
+         * {@link RecordTerminator#LOCK_FIRST} to lock onto the first real record terminator and reject mixed usage, or to one of the fixed terminators
+         * ({@link RecordTerminator#LF}, {@link RecordTerminator#CRLF}, or {@link RecordTerminator#CR}) to require a specific terminator.
+         * </p>
+         *
+         * <p>
+         * This setting only affects parsing; it does not change the {@linkplain #setRecordSeparator(String) record separator} used for output.
+         * </p>
+         *
+         * @param recordTerminator The record terminator strategy.
+         * @return This instance.
+         * @throws NullPointerException if {@code recordTerminator} is {@code null}.
+         * @see RecordTerminator
+         * @since 1.15.0
+         */
+        public Builder setRecordTerminator(final RecordTerminator recordTerminator) {
+            this.recordTerminator = Objects.requireNonNull(recordTerminator, "recordTerminator");
             return this;
         }
 
@@ -1630,6 +1657,9 @@ public final class CSVFormat implements Serializable {
     /** For output. */
     private final String recordSeparator;
 
+    /** The strategy used to recognize record terminators when parsing. */
+    private final RecordTerminator recordTerminator;
+
     /** Whether to skip the header record. */
     private final boolean skipHeaderRecord;
 
@@ -1669,6 +1699,7 @@ public final class CSVFormat implements Serializable {
         this.quoteMode = builder.quoteMode;
         this.quotedNullString = builder.quotedNullString;
         this.recordSeparator = builder.recordSeparator;
+        this.recordTerminator = builder.recordTerminator;
         this.skipHeaderRecord = builder.skipHeaderRecord;
         this.trailingData = builder.trailingData;
         this.trailingDelimiter = builder.trailingDelimiter;
@@ -1736,6 +1767,7 @@ public final class CSVFormat implements Serializable {
                 ignoreSurroundingSpaces == other.ignoreSurroundingSpaces && lenientEof == other.lenientEof && maxRows == other.maxRows &&
                 Objects.equals(nullString, other.nullString) && Objects.equals(quoteCharacter, other.quoteCharacter) && quoteMode == other.quoteMode &&
                 Objects.equals(quotedNullString, other.quotedNullString) && Objects.equals(recordSeparator, other.recordSeparator) &&
+                recordTerminator == other.recordTerminator &&
                 skipHeaderRecord == other.skipHeaderRecord && trailingData == other.trailingData && trailingDelimiter == other.trailingDelimiter &&
                 trim == other.trim;
     }
@@ -2029,6 +2061,17 @@ public final class CSVFormat implements Serializable {
     }
 
     /**
+     * Gets the strategy used to recognize record terminators when parsing.
+     *
+     * @return the record terminator strategy.
+     * @see RecordTerminator
+     * @since 1.15.0
+     */
+    public RecordTerminator getRecordTerminator() {
+        return recordTerminator;
+    }
+
+    /**
      * Gets whether to skip the header record.
      *
      * @return whether to skip the header record.
@@ -2084,7 +2127,7 @@ public final class CSVFormat implements Serializable {
         result = prime * result + Arrays.hashCode(headers);
         result = prime * result + Objects.hash(allowMissingColumnNames, autoFlush, commentMarker, delimiter, duplicateHeaderMode, escapeCharacter,
                 ignoreEmptyLines, ignoreHeaderCase, ignoreSurroundingSpaces, lenientEof, maxRows, nullString, quoteCharacter, quoteMode, quotedNullString,
-                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim);
+                recordSeparator, recordTerminator, skipHeaderRecord, trailingData, trailingDelimiter, trim);
         return result;
     }
 
@@ -2726,6 +2769,8 @@ public final class CSVFormat implements Serializable {
             sb.append(Constants.SP);
             sb.append("RecordSeparator=<").append(recordSeparator).append('>');
         }
+        sb.append(Constants.SP);
+        sb.append("RecordTerminator=<").append(recordTerminator).append('>');
         if (getIgnoreEmptyLines()) {
             sb.append(" EmptyLines:ignored");
         }

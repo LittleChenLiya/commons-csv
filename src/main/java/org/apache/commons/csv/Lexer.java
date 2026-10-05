@@ -45,10 +45,21 @@ final class Lexer implements Closeable {
     private final boolean ignoreEmptyLines;
     private final boolean lenientEof;
     private final boolean trailingData;
+    private final RecordTerminator recordTerminator;
 
     /** The buffered reader. */
     private final ExtendedBufferedReader reader;
     private String firstEol;
+
+    /**
+     * The terminator locked onto by {@link RecordTerminator#LOCK_FIRST}, or {@code null} if no real record terminator has been encountered yet.
+     */
+    private String lockedTerminator;
+
+    /**
+     * The 1-based number of the record currently being parsed, used in error messages.
+     */
+    private long recordNumber;
 
     private boolean isLastTokenDelimiter;
 
@@ -62,6 +73,7 @@ final class Lexer implements Closeable {
         this.ignoreEmptyLines = format.getIgnoreEmptyLines();
         this.lenientEof = format.getLenientEof();
         this.trailingData = format.getTrailingData();
+        this.recordTerminator = format.getRecordTerminator();
         this.delimiterBuf = new char[delimiter.length - 1];
         this.escapeDelimiterBuf = new char[2 * delimiter.length - 1];
     }
@@ -129,6 +141,15 @@ final class Lexer implements Closeable {
 
     String getFirstEol() {
         return firstEol;
+    }
+
+    /**
+     * Sets the 1-based number of the record currently being parsed, used in error messages.
+     *
+     * @param recordNumber The 1-based record number.
+     */
+    void setRecordNumber(final long recordNumber) {
+        this.recordNumber = recordNumber;
     }
 
     boolean isClosed() {
@@ -475,24 +496,87 @@ final class Lexer implements Closeable {
     boolean readEndOfLine(final int ch) throws IOException {
         // check if we have \r\n...
         int cur = ch;
+        final String eol;
         if (cur == Constants.CR && reader.peek() == Constants.LF) {
             // note: does not change ch outside of this method!
             cur = reader.read();
+            eol = Constants.CRLF;
+        } else if (cur == Constants.LF) {
+            eol = LF_STRING;
+        } else if (cur == Constants.CR) {
+            eol = CR_STRING;
+        } else {
+            eol = null;
+        }
+        if (eol != null) {
+            validateRecordTerminator(eol);
             // Save the EOL state
             if (firstEol == null) {
-                this.firstEol = Constants.CRLF;
+                this.firstEol = eol;
             }
         }
-        // save EOL state here.
-        if (firstEol == null) {
-            if (cur == Constants.LF) {
-                this.firstEol = LF_STRING;
-            } else if (cur == Constants.CR) {
-                this.firstEol = CR_STRING;
-            }
-        }
-
         return cur == Constants.LF || cur == Constants.CR;
+    }
+
+    /**
+     * Validates the given record terminator against the configured {@link RecordTerminator} strategy.
+     *
+     * <p>
+     * Line breaks inside a quoted field never reach this method (they are appended to the token content directly), and comment lines are consumed by
+     * {@link ExtendedBufferedReader#readLine()} without calling this method, so neither participates in the strategy.
+     * </p>
+     *
+     * @param eol The record terminator actually found: {@link Constants#LF}, {@link Constants#CR}, or {@link Constants#CRLF}.
+     * @throws CSVException if the terminator violates the configured strategy.
+     */
+    private void validateRecordTerminator(final String eol) throws IOException {
+        switch (recordTerminator) {
+        case ANY:
+            return;
+        case LOCK_FIRST:
+            if (lockedTerminator == null) {
+                lockedTerminator = eol;
+            } else if (!lockedTerminator.equals(eol)) {
+                throw new CSVException(
+                        "Record terminator mismatch: locked to %s but found %s at record %,d, position %,d",
+                        describeTerminator(lockedTerminator), describeTerminator(eol), recordNumber, getCharacterPosition());
+            }
+            return;
+        case LF:
+        case CRLF:
+        case CR:
+            final String expected = recordTerminator.getTerminator();
+            if (!expected.equals(eol)) {
+                throw new CSVException(
+                        "Record terminator mismatch: expected %s but found %s at record %,d, position %,d",
+                        describeTerminator(expected), describeTerminator(eol), recordNumber, getCharacterPosition());
+            }
+            return;
+        default:
+            return;
+        }
+    }
+
+    /**
+     * Describes a record terminator for inclusion in error messages.
+     *
+     * @param terminator The terminator string.
+     * @return A human-readable description.
+     */
+    private static String describeTerminator(final String terminator) {
+        if (terminator == null) {
+            return "none";
+        }
+        if (Constants.CRLF.equals(terminator)) {
+            return "CRLF";
+        }
+        if (LF_STRING.equals(terminator)) {
+            return "LF";
+        }
+        if (CR_STRING.equals(terminator)) {
+            return "CR";
+        }
+        return terminator;
     }
 
     // TODO escape handling needs more work

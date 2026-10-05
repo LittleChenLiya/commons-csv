@@ -768,7 +768,7 @@ class CSVFormatTest {
         // @formatter:on
         assertEquals(
                 "Delimiter=<,> Escape=<?> QuoteChar=<\"> QuoteMode=<MINIMAL> NullString=<> RecordSeparator=<" + CRLF +
-                        "> IgnoreHeaderCase:ignored SkipHeaderRecord:false HeaderComments:[This is HeaderComments] Header:[col1, col2, col3]",
+                        "> RecordTerminator=<ANY> IgnoreHeaderCase:ignored SkipHeaderRecord:false HeaderComments:[This is HeaderComments] Header:[col1, col2, col3]",
                 format.toString());
     }
 
@@ -1182,7 +1182,7 @@ class CSVFormatTest {
 
         final String string = CSVFormat.INFORMIX_UNLOAD.toString();
 
-        assertEquals("Delimiter=<|> Escape=<\\> QuoteChar=<\"> RecordSeparator=<\n> EmptyLines:ignored SkipHeaderRecord:false", string);
+        assertEquals("Delimiter=<|> Escape=<\\> QuoteChar=<\"> RecordSeparator=<\n> RecordTerminator=<ANY> EmptyLines:ignored SkipHeaderRecord:false", string);
 
     }
 
@@ -1342,7 +1342,7 @@ class CSVFormatTest {
         assertNotEquals(csvFormat, csvFormatTwo);
 
         assertNotEquals(csvFormatTwo, csvFormat);
-        assertEquals("Delimiter=<,> QuoteChar=<\"> CommentStart=<n> RecordSeparator=<\r\n> EmptyLines:ignored SkipHeaderRecord:false",
+        assertEquals("Delimiter=<,> QuoteChar=<\"> CommentStart=<n> RecordSeparator=<\r\n> RecordTerminator=<ANY> EmptyLines:ignored SkipHeaderRecord:false",
                 csvFormatTwo.toString());
 
     }

@@ -918,6 +918,7 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
         StringBuilder sb = null;
         final long startCharPosition = lexer.getCharacterPosition() + characterOffset;
         final long startBytePosition = lexer.getBytesRead() + byteOffset;
+        lexer.setRecordNumber(recordNumber + 1);
         do {
             reusableToken.reset();
             lexer.nextToken(reusableToken);
