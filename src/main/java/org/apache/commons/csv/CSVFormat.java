@@ -264,6 +264,8 @@ public final class CSVFormat implements Serializable {
 
         private String recordSeparator;
 
+        private RecordSeparatorPolicy recordSeparatorPolicy;
+
         private boolean skipHeaderRecord;
 
         private boolean lenientEof;
@@ -300,6 +302,7 @@ public final class CSVFormat implements Serializable {
             this.quoteMode = csvFormat.quoteMode;
             this.quotedNullString = csvFormat.quotedNullString;
             this.recordSeparator = csvFormat.recordSeparator;
+            this.recordSeparatorPolicy = csvFormat.recordSeparatorPolicy;
             this.skipHeaderRecord = csvFormat.skipHeaderRecord;
             this.trailingData = csvFormat.trailingData;
             this.trailingDelimiter = csvFormat.trailingDelimiter;
@@ -860,6 +863,23 @@ public final class CSVFormat implements Serializable {
          */
         public Builder setRecordSeparator(final String recordSeparator) {
             this.recordSeparator = recordSeparator;
+            return this;
+        }
+
+        /**
+         * Sets the policy the parser uses to validate record separators (line terminators) in the input, {@code null} resets to
+         * {@link RecordSeparatorPolicy#ANY}.
+         *
+         * <p>
+         * <strong>Note:</strong> This setting is only used during parsing and does not affect printing.
+         * </p>
+         *
+         * @param recordSeparatorPolicy The record separator policy to use for parsing, {@code null} resets to {@link RecordSeparatorPolicy#ANY}.
+         * @return This instance.
+         * @since 1.15.0
+         */
+        public Builder setRecordSeparatorPolicy(final RecordSeparatorPolicy recordSeparatorPolicy) {
+            this.recordSeparatorPolicy = recordSeparatorPolicy != null ? recordSeparatorPolicy : RecordSeparatorPolicy.ANY;
             return this;
         }
 
@@ -1630,6 +1650,9 @@ public final class CSVFormat implements Serializable {
     /** For output. */
     private final String recordSeparator;
 
+    /** The policy the parser uses to validate record separators in the input. */
+    private final RecordSeparatorPolicy recordSeparatorPolicy;
+
     /** Whether to skip the header record. */
     private final boolean skipHeaderRecord;
 
@@ -1669,6 +1692,7 @@ public final class CSVFormat implements Serializable {
         this.quoteMode = builder.quoteMode;
         this.quotedNullString = builder.quotedNullString;
         this.recordSeparator = builder.recordSeparator;
+        this.recordSeparatorPolicy = builder.recordSeparatorPolicy != null ? builder.recordSeparatorPolicy : RecordSeparatorPolicy.ANY;
         this.skipHeaderRecord = builder.skipHeaderRecord;
         this.trailingData = builder.trailingData;
         this.trailingDelimiter = builder.trailingDelimiter;
@@ -1736,6 +1760,7 @@ public final class CSVFormat implements Serializable {
                 ignoreSurroundingSpaces == other.ignoreSurroundingSpaces && lenientEof == other.lenientEof && maxRows == other.maxRows &&
                 Objects.equals(nullString, other.nullString) && Objects.equals(quoteCharacter, other.quoteCharacter) && quoteMode == other.quoteMode &&
                 Objects.equals(quotedNullString, other.quotedNullString) && Objects.equals(recordSeparator, other.recordSeparator) &&
+                recordSeparatorPolicy == other.recordSeparatorPolicy &&
                 skipHeaderRecord == other.skipHeaderRecord && trailingData == other.trailingData && trailingDelimiter == other.trailingDelimiter &&
                 trim == other.trim;
     }
@@ -2029,6 +2054,16 @@ public final class CSVFormat implements Serializable {
     }
 
     /**
+     * Gets the policy the parser uses to validate record separators (line terminators) in the input.
+     *
+     * @return The record separator policy, never {@code null}; defaults to {@link RecordSeparatorPolicy#ANY}.
+     * @since 1.15.0
+     */
+    public RecordSeparatorPolicy getRecordSeparatorPolicy() {
+        return recordSeparatorPolicy;
+    }
+
+    /**
      * Gets whether to skip the header record.
      *
      * @return whether to skip the header record.
@@ -2084,7 +2119,7 @@ public final class CSVFormat implements Serializable {
         result = prime * result + Arrays.hashCode(headers);
         result = prime * result + Objects.hash(allowMissingColumnNames, autoFlush, commentMarker, delimiter, duplicateHeaderMode, escapeCharacter,
                 ignoreEmptyLines, ignoreHeaderCase, ignoreSurroundingSpaces, lenientEof, maxRows, nullString, quoteCharacter, quoteMode, quotedNullString,
-                recordSeparator, skipHeaderRecord, trailingData, trailingDelimiter, trim);
+                recordSeparator, recordSeparatorPolicy, skipHeaderRecord, trailingData, trailingDelimiter, trim);
         return result;
     }
 
@@ -2725,6 +2760,10 @@ public final class CSVFormat implements Serializable {
         if (recordSeparator != null) {
             sb.append(Constants.SP);
             sb.append("RecordSeparator=<").append(recordSeparator).append('>');
+        }
+        if (recordSeparatorPolicy != RecordSeparatorPolicy.ANY) {
+            sb.append(Constants.SP);
+            sb.append("RecordSeparatorPolicy=<").append(recordSeparatorPolicy).append('>');
         }
         if (getIgnoreEmptyLines()) {
             sb.append(" EmptyLines:ignored");

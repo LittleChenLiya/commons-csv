@@ -524,6 +524,8 @@ public final class CSVParser implements Iterable<CSVRecord>, Closeable {
     private CSVParser(final Builder builder) throws IOException {
         this.format = (builder.format != null ? builder.format : CSVFormat.DEFAULT).copy();
         this.lexer = new Lexer(format, new ExtendedBufferedReader(builder.getReader(), builder.getCharset(), builder.trackBytes));
+        // The record currently being lexed is the next one to be delivered.
+        this.lexer.setRecordNumberSupplier(() -> recordNumber + 1);
         this.csvRecordIterator = new CSVRecordIterator();
         this.headers = createHeaders();
         this.byteOffset = builder.byteOffset != -1 ? builder.byteOffset : builder.characterOffset;

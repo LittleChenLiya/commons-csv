@@ -24,6 +24,7 @@ import static org.apache.commons.io.IOUtils.EOF;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 import org.apache.commons.io.IOUtils;
 
@@ -46,6 +47,15 @@ final class Lexer implements Closeable {
     private final boolean lenientEof;
     private final boolean trailingData;
 
+    /** The policy used to validate record separators, never null. */
+    private final RecordSeparatorPolicy recordSeparatorPolicy;
+
+    /** The record separator locked by {@link RecordSeparatorPolicy#CONSISTENT}, null until the first record terminator is seen. */
+    private String lockedRecordSeparator;
+
+    /** Supplies the number of the record currently being parsed, for error reporting; may be null. */
+    private LongSupplier recordNumberSupplier;
+
     /** The buffered reader. */
     private final ExtendedBufferedReader reader;
     private String firstEol;
@@ -62,6 +72,7 @@ final class Lexer implements Closeable {
         this.ignoreEmptyLines = format.getIgnoreEmptyLines();
         this.lenientEof = format.getLenientEof();
         this.trailingData = format.getTrailingData();
+        this.recordSeparatorPolicy = format.getRecordSeparatorPolicy();
         this.delimiterBuf = new char[delimiter.length - 1];
         this.escapeDelimiterBuf = new char[2 * delimiter.length - 1];
     }
@@ -475,24 +486,75 @@ final class Lexer implements Closeable {
     boolean readEndOfLine(final int ch) throws IOException {
         // check if we have \r\n...
         int cur = ch;
+        String eol = null;
         if (cur == Constants.CR && reader.peek() == Constants.LF) {
             // note: does not change ch outside of this method!
             cur = reader.read();
+            eol = Constants.CRLF;
+        } else if (cur == Constants.LF) {
+            eol = LF_STRING;
+        } else if (cur == Constants.CR) {
+            eol = CR_STRING;
+        }
+        if (eol != null) {
             // Save the EOL state
             if (firstEol == null) {
-                this.firstEol = Constants.CRLF;
+                this.firstEol = eol;
             }
-        }
-        // save EOL state here.
-        if (firstEol == null) {
-            if (cur == Constants.LF) {
-                this.firstEol = LF_STRING;
-            } else if (cur == Constants.CR) {
-                this.firstEol = CR_STRING;
-            }
+            checkRecordSeparatorPolicy(eol);
         }
 
         return cur == Constants.LF || cur == Constants.CR;
+    }
+
+    /**
+     * Validates a record separator against the configured {@link RecordSeparatorPolicy}. A CR followed by LF is recognized as a single CRLF
+     * terminator even when the reader delivers the two characters in separate chunks, because {@link ExtendedBufferedReader#peek()} looks
+     * ahead across chunk boundaries.
+     *
+     * @param eol The record separator just read: "\r", "\n" or "\r\n".
+     * @throws CSVException Thrown when the separator violates the policy; the message carries the record number and character position.
+     */
+    private void checkRecordSeparatorPolicy(final String eol) throws CSVException {
+        final String required;
+        switch (recordSeparatorPolicy) {
+        case ANY:
+            return;
+        case CONSISTENT:
+            if (lockedRecordSeparator == null) {
+                lockedRecordSeparator = eol;
+                return;
+            }
+            required = lockedRecordSeparator;
+            break;
+        default:
+            required = recordSeparatorPolicy.getSeparator();
+            break;
+        }
+        if (!required.equals(eol)) {
+            throw new CSVException("Invalid record separator at record %,d, character position %,d: expected %s but found %s", getRecordNumber(),
+                    getCharacterPosition(), toDisplayName(required), toDisplayName(eol));
+        }
+    }
+
+    private long getRecordNumber() {
+        return recordNumberSupplier != null ? recordNumberSupplier.getAsLong() : getCurrentLineNumber();
+    }
+
+    /**
+     * Sets the supplier for the number of the record currently being parsed, used in policy violation messages.
+     *
+     * @param recordNumberSupplier The record number supplier, may be null.
+     */
+    void setRecordNumberSupplier(final LongSupplier recordNumberSupplier) {
+        this.recordNumberSupplier = recordNumberSupplier;
+    }
+
+    private static String toDisplayName(final String eol) {
+        if (Constants.CRLF.equals(eol)) {
+            return "CRLF";
+        }
+        return CR_STRING.equals(eol) ? "CR" : "LF";
     }
 
     // TODO escape handling needs more work
