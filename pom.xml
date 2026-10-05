@@ -195,6 +195,10 @@
               <inputExclude>src/test/resources/org/apache/commons/csv/CSVFileParser/testCSV246_checkWithNoComment.txt</inputExclude>
               <inputExclude>src/test/resources/org/apache/commons/csv/CSV-290/psql.csv</inputExclude>
               <inputExclude>src/test/resources/org/apache/commons/csv/CSV-290/psql.tsv</inputExclude>
+              <inputExclude>src/test/resources/org/apache/commons/csv/sequence/orders-interleaved.csv</inputExclude>
+              <inputExclude>src/test/resources/org/apache/commons/csv/sequence/orders-illegal-transition.csv</inputExclude>
+              <inputExclude>src/test/resources/org/apache/commons/csv/sequence/orders-capacity.csv</inputExclude>
+              <inputExclude>src/test/resources/org/apache/commons/csv/sequence/orders-bad-field.csv</inputExclude>
             </inputExcludes>
           </configuration>
         </plugin>
