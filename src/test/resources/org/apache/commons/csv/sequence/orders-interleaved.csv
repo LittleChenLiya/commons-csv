@@ -1,0 +1,7 @@
+order,event,amount
+a,new,10
+b,new,20
+a,paid,10
+b,paid,20
+a,sent,10
+b,sent,20
