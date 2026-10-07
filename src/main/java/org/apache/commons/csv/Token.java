@@ -64,12 +64,27 @@ final class Token {
     /** True when an escape sequence in the input was translated while building {@link #content}. */
     boolean isEscaped;
 
+    /**
+     * The character offset in the source where this token's raw text starts, or -1 for an unused token.
+     * <p>
+     * The range {@code [startCharPosition, endCharPosition)} covers the exact characters of the field in the original
+     * input, including surrounding whitespace that the parser skips, but excluding the delimiter or record terminator
+     * that follows the field.
+     * </p>
+     */
+    long startCharPosition = -1;
+
+    /** The character offset in the source just past this token's raw text. */
+    long endCharPosition = -1;
+
     void reset() {
         content.setLength(0);
         type = INVALID;
         isReady = false;
         isQuoted = false;
         isEscaped = false;
+        startCharPosition = -1;
+        endCharPosition = -1;
     }
 
     /**

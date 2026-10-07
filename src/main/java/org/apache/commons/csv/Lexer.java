@@ -258,6 +258,8 @@ final class Lexer implements Closeable {
         int lastChar = reader.getLastChar();
         // read the next char and set eol
         int c = reader.read();
+        // Index of c in the source, captured before readEndOfLine may consume a following LF.
+        long cIndex = reader.getPosition() - 1;
         // Note: The following call will swallow LF if c == CR. But we don't need to know if the last char was CR or LF - they are equivalent here.
         boolean eol = readEndOfLine(c);
         // empty line detection: eol AND (last char was EOL or beginning)
@@ -266,6 +268,7 @@ final class Lexer implements Closeable {
                 // Go on char ahead ...
                 lastChar = c;
                 c = reader.read();
+                cIndex = reader.getPosition() - 1;
                 eol = readEndOfLine(c);
                 // reached the end of the file without any content (empty line at the end)
                 if (isEndOfFile(c)) {
@@ -281,6 +284,7 @@ final class Lexer implements Closeable {
             // don't set token.isReady here because no content
             return token;
         }
+        token.startCharPosition = cIndex;
         if (isStartOfLine(lastChar) && isCommentStart(c)) {
             final String line = reader.readLine();
             if (line == null) {
@@ -291,18 +295,21 @@ final class Lexer implements Closeable {
             final String comment = line.trim();
             token.content.append(comment);
             token.type = Token.Type.COMMENT;
+            // Comments are not addressable fields; record an empty span at the comment marker.
+            token.endCharPosition = cIndex;
             return token;
         }
         // Important: make sure a new char gets consumed in each iteration
         while (token.type == Token.Type.INVALID) {
             // isDelimiter consumes the trailing characters of a multi-character delimiter as a side effect, so it must
             // only be evaluated once per character. Remember a match found while skipping whitespace below.
-            boolean delimiter = false;
+            boolean delimiterFound = false;
             // ignore whitespaces at beginning of a token
             if (ignoreSurroundingSpaces) {
                 while (Character.isWhitespace((char) c) && !eol) {
                     if (isDelimiter(c)) {
-                        delimiter = true;
+                        delimiterFound = true;
+                        token.endCharPosition = reader.getPosition() - delimiter.length;
                         break;
                     }
                     c = reader.read();
@@ -310,13 +317,17 @@ final class Lexer implements Closeable {
                 }
             }
             // ok, start of token reached: encapsulated, or token
-            if (delimiter || isDelimiter(c)) {
+            if (delimiterFound || isDelimiter(c)) {
                 // empty token return TOKEN("")
                 token.type = Token.Type.TOKEN;
+                if (!delimiterFound) {
+                    token.endCharPosition = reader.getPosition() - delimiter.length;
+                }
             } else if (eol) {
                 // empty token return EORECORD("")
                 // noop: token.content.append("");
                 token.type = Token.Type.EORECORD;
+                token.endCharPosition = cIndex;
             } else if (isQuoteChar(c)) {
                 // consume encapsulated token
                 parseEncapsulatedToken(token);
@@ -325,6 +336,7 @@ final class Lexer implements Closeable {
                 // noop: token.content.append("");
                 token.type = Token.Type.EOF;
                 token.isReady = true; // there is data at EOF
+                token.endCharPosition = reader.getPosition() - 1;
             } else {
                 // next token must be a simple token
                 // add removed blanks when not ignoring whitespace chars...
@@ -374,20 +386,26 @@ final class Lexer implements Closeable {
                     c = reader.read();
                     token.content.append((char) c);
                 } else {
+                    // The raw field ends just after the closing encapsulator; whitespace (and the delimiter or record
+                    // terminator) that follows is left untouched.
+                    final long afterQuote = reader.getPosition();
                     // token finish mark (encapsulator) reached: ignore whitespace till delimiter
                     while (true) {
                         c = reader.read();
                         if (isDelimiter(c)) {
                             token.type = Token.Type.TOKEN;
+                            token.endCharPosition = afterQuote;
                             return token;
                         }
                         if (isEndOfFile(c)) {
                             token.type = Token.Type.EOF;
                             token.isReady = true; // There is data at EOF
+                            token.endCharPosition = afterQuote;
                             return token;
                         }
                         if (readEndOfLine(c)) {
                             token.type = Token.Type.EORECORD;
+                            token.endCharPosition = afterQuote;
                             return token;
                         }
                         if (trailingData) {
@@ -405,6 +423,7 @@ final class Lexer implements Closeable {
                 if (lenientEof) {
                     token.type = Token.Type.EOF;
                     token.isReady = true; // There is data at EOF
+                    token.endCharPosition = reader.getPosition() - 1;
                     return token;
                 }
                 // error condition (end of file before end of token)
@@ -437,18 +456,23 @@ final class Lexer implements Closeable {
     private Token parseSimpleToken(final Token token, final int ch) throws IOException {
         // Faster to use while(true)+break than while(token.type == INVALID)
         int cur = ch;
+        // Index of cur, captured before readEndOfLine may consume the LF of a CRLF sequence.
+        long curIndex = reader.getPosition() - 1;
         while (true) {
             if (readEndOfLine(cur)) {
                 token.type = Token.Type.EORECORD;
+                token.endCharPosition = curIndex;
                 break;
             }
             if (isEndOfFile(cur)) {
                 token.type = Token.Type.EOF;
                 token.isReady = true; // There is data at EOF
+                token.endCharPosition = reader.getPosition() - 1;
                 break;
             }
             if (isDelimiter(cur)) {
                 token.type = Token.Type.TOKEN;
+                token.endCharPosition = reader.getPosition() - delimiter.length;
                 break;
             }
             // continue
@@ -458,6 +482,7 @@ final class Lexer implements Closeable {
                 token.content.append((char) cur);
             }
             cur = reader.read(); // continue
+            curIndex = reader.getPosition() - 1;
         }
 
         if (ignoreSurroundingSpaces) {
