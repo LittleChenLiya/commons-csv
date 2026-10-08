@@ -50,6 +50,9 @@ final class Lexer implements Closeable {
     private final ExtendedBufferedReader reader;
     private String firstEol;
 
+    /** The length in characters of the line terminator matched by the last {@link #readEndOfLine(int)} call, 0 if none. */
+    private int eolLength;
+
     private boolean isLastTokenDelimiter;
 
     Lexer(final CSVFormat format, final ExtendedBufferedReader reader) {
@@ -293,6 +296,8 @@ final class Lexer implements Closeable {
             token.type = Token.Type.COMMENT;
             return token;
         }
+        // The first character of the field has been read; its offset is the raw start of the token.
+        token.startOffset = getCharacterPosition() - 1;
         // Important: make sure a new char gets consumed in each iteration
         while (token.type == Token.Type.INVALID) {
             // isDelimiter consumes the trailing characters of a multi-character delimiter as a side effect, so it must
@@ -313,10 +318,12 @@ final class Lexer implements Closeable {
             if (delimiter || isDelimiter(c)) {
                 // empty token return TOKEN("")
                 token.type = Token.Type.TOKEN;
+                token.startOffset = token.endOffset = getCharacterPosition() - this.delimiter.length;
             } else if (eol) {
                 // empty token return EORECORD("")
                 // noop: token.content.append("");
                 token.type = Token.Type.EORECORD;
+                token.startOffset = token.endOffset = getCharacterPosition() - eolLength;
             } else if (isQuoteChar(c)) {
                 // consume encapsulated token
                 parseEncapsulatedToken(token);
@@ -325,6 +332,7 @@ final class Lexer implements Closeable {
                 // noop: token.content.append("");
                 token.type = Token.Type.EOF;
                 token.isReady = true; // there is data at EOF
+                token.startOffset = token.endOffset = getCharacterPosition() - 1;
             } else {
                 // next token must be a simple token
                 // add removed blanks when not ignoring whitespace chars...
@@ -379,15 +387,18 @@ final class Lexer implements Closeable {
                         c = reader.read();
                         if (isDelimiter(c)) {
                             token.type = Token.Type.TOKEN;
+                            token.endOffset = getCharacterPosition() - delimiter.length;
                             return token;
                         }
                         if (isEndOfFile(c)) {
                             token.type = Token.Type.EOF;
                             token.isReady = true; // There is data at EOF
+                            token.endOffset = getCharacterPosition() - 1;
                             return token;
                         }
                         if (readEndOfLine(c)) {
                             token.type = Token.Type.EORECORD;
+                            token.endOffset = getCharacterPosition() - eolLength;
                             return token;
                         }
                         if (trailingData) {
@@ -405,6 +416,7 @@ final class Lexer implements Closeable {
                 if (lenientEof) {
                     token.type = Token.Type.EOF;
                     token.isReady = true; // There is data at EOF
+                    token.endOffset = getCharacterPosition() - 1;
                     return token;
                 }
                 // error condition (end of file before end of token)
@@ -440,15 +452,18 @@ final class Lexer implements Closeable {
         while (true) {
             if (readEndOfLine(cur)) {
                 token.type = Token.Type.EORECORD;
+                token.endOffset = getCharacterPosition() - eolLength;
                 break;
             }
             if (isEndOfFile(cur)) {
                 token.type = Token.Type.EOF;
                 token.isReady = true; // There is data at EOF
+                token.endOffset = getCharacterPosition() - 1;
                 break;
             }
             if (isDelimiter(cur)) {
                 token.type = Token.Type.TOKEN;
+                token.endOffset = getCharacterPosition() - delimiter.length;
                 break;
             }
             // continue
@@ -475,9 +490,11 @@ final class Lexer implements Closeable {
     boolean readEndOfLine(final int ch) throws IOException {
         // check if we have \r\n...
         int cur = ch;
+        eolLength = 0;
         if (cur == Constants.CR && reader.peek() == Constants.LF) {
             // note: does not change ch outside of this method!
             cur = reader.read();
+            eolLength = 2;
             // Save the EOL state
             if (firstEol == null) {
                 this.firstEol = Constants.CRLF;
@@ -492,7 +509,13 @@ final class Lexer implements Closeable {
             }
         }
 
-        return cur == Constants.LF || cur == Constants.CR;
+        if (cur == Constants.LF || cur == Constants.CR) {
+            if (eolLength == 0) {
+                eolLength = 1;
+            }
+            return true;
+        }
+        return false;
     }
 
     // TODO escape handling needs more work

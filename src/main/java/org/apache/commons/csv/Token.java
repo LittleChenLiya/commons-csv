@@ -64,12 +64,33 @@ final class Token {
     /** True when an escape sequence in the input was translated while building {@link #content}. */
     boolean isEscaped;
 
+    /**
+     * The offset of the first character of this token's raw text in the input, inclusive, or -1 when not set.
+     * <p>
+     * For an encapsulated token this is the offset of the opening quote character. For an empty token this equals
+     * {@link #endOffset}. This is not set for comment tokens.
+     * </p>
+     */
+    long startOffset = -1;
+
+    /**
+     * The offset one past the last character of this token's raw text in the input, exclusive, or -1 when not set.
+     * <p>
+     * The trailing delimiter or end-of-line that terminated the token is not included, so
+     * {@code input.substring((int) startOffset, (int) endOffset)} is the raw field text exactly as it appears in the
+     * input, quotes and escapes included.
+     * </p>
+     */
+    long endOffset = -1;
+
     void reset() {
         content.setLength(0);
         type = INVALID;
         isReady = false;
         isQuoted = false;
         isEscaped = false;
+        startOffset = -1;
+        endOffset = -1;
     }
 
     /**
